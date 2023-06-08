@@ -1,6 +1,10 @@
 # Distillation-Loss
 Implementation of Various Distillation Losses (2019-2023) 
 
+## Note 
+
+One Teacher multiple students may fail in some cases. simple loss functions will work perfectly fine though. Need to tweak to the code I'm too lazy to do anything about it right now. I will fix them later.
+
 ### Description
 
 `multiple_lrs`: One Teacher and Corresponding multiple Students   
@@ -48,22 +52,20 @@ Diss_Loss = DistillationLoss(
    
 ```
 from loss import DistillationLoss
-Diss_Loss = DistillationLoss(
-    aux_loss="l1", features_index=[-1], 
-    alpha=1.0, beta =1.0, spatial_avg="mean",
-)
+Diss_Loss = DistillationLoss(aux_loss="l1", features_index=[-1], alpha=1.0, beta =1.0, spatial_avg="mean")
 ```
 
-#### [Fewer-Shots and Lower-Resolutions: Towards Ultrafast Face Recognition in the Wild, 2019](https://dl.acm.org/doi/pdf/10.1145/3343031.3351082?casa_token=wdms_EHiPZEAAAAA:KQtFlBNkOZIq4Ubri935TxatOEOBWPGASmIO1LdoKqpY619lCuia4DUBqAx5k1YMxw_lwk7LNEM6
-)
+#### [Fewer-Shots and Lower-Resolutions: Towards Ultrafast Face Recognition in the Wild, 2019](https://dl.acm.org/doi/pdf/10.1145/3343031.3351082?casa_token=wdms_EHiPZEAAAAA:KQtFlBNkOZIq4Ubri935TxatOEOBWPGASmIO1LdoKqpY619lCuia4DUBqAx5k1YMxw_lwk7LNEM6)
+
+ - For every Teacher, there are d(=9) student outputs `multiple_lrs=9`
+ - Size of labels  == Size of students 
+ - During fine-tunning use relations loss `relational`
 
 ```
 from loss import DistillationLoss
-Diss_Loss = DistillationLoss(
-    aux_loss="l2", features_index=[-1], 
-    alpha=1.0, beta =1.0, spatial_avg="mean",
+Diss_Loss = DistillationLoss(aux_loss="l2", features_index=[-1],  alpha=1.0, beta =1.0, spatial_avg="mean", multiple_lrs=9)
 
-)
+Diss_Loss = DistillationLoss(aux_loss="relational", features_index=[-1],  alpha=1.0, beta =1.0, spatial_avg="mean", no_teacher=True)
 ```
 
 
@@ -72,29 +74,46 @@ Diss_Loss = DistillationLoss(
 
 ## Testing the above loss 
 
-```
-# B == 2 || Num Classes == 200 || Last layer features : 2, 7,7, 2048 --> 2,49,2048 || labels is softmaxed() || student_logits_teacher_features Can be None as well 
+ - B == 2 
+ - Num Classes == 200 
+ - Last layer features : 2, 7,7, 2048 --> 2,49,2048 
+ - labels is softmaxed() 
+ - student_logits_teacher_features. Can be `None` as well 
 
+#### 1 TEACHER 1 STUDENT
+```
 import torch
 teacher_logits = torch.rand(2, 200)
 teacher_features = [torch.rand(2, 196, 1024), torch.rand(2, 49, 2048)] 
-labels = torch.rand(2, 200).softmax(-1)
 student_logits_teacher_features = torch.rand(2, 200)
-
-<!-- 1 TEACHER 1 STUDENT -->
+labels = torch.rand(2, 200).softmax(-1)
 student_logits = torch.rand(2, 200)
 student_features = [torch.rand(2, 196, 1024), torch.rand(2, 49, 2048)] 
 
 Diss_Loss(
     teacher_logits=teacher_logits, teacher_features=teacher_features, student_logits=student_logits, student_features=student_features, labels=labels, student_logits_teacher_features=student_logits_teacher_features,
 )
-
-
-<!-- 1 TEACHER N=10 STUDENTS -->
-student_logits = torch.rand(2, 10, 200)
-student_features = [torch.rand(2, 10, 196, 1024), torch.rand(2, 10, 49, 2048)] 
-
+```
+#### 1 TEACHER d STUDENT
+```
+import torch
+teacher_logits = torch.rand(2, 200)
+teacher_features = [torch.rand(2, 196, 1024), torch.rand(2, 49, 2048)] 
+student_logits = torch.rand(2, 9, 200)
+student_features = [torch.rand(2, 9, 196, 1024), torch.rand(2, 9, 49, 2048)] 
+labels = torch.rand(2, 9, 200).softmax(-1)
 Diss_Loss(
     teacher_logits=teacher_logits, teacher_features=teacher_features, student_logits=student_logits, student_features=student_features, labels=labels, student_logits_teacher_features=student_logits_teacher_features,
+)
+```
+#### No TEACHER, just fine-tunning STUDENT
+
+```
+import torch
+student_logits = torch.rand(2, 200)
+labels = torch.rand(2, 200).softmax(-1)
+student_features = [torch.rand(2, 196, 1), torch.rand(2, 49, 1)] 
+Diss_Loss(
+    teacher_logits=None, teacher_features=None, student_logits=student_logits, student_features=student_features, labels=labels, student_logits_teacher_features=None,
 )
 ```

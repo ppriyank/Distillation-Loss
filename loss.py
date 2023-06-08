@@ -172,6 +172,18 @@ def multiple_lrs_loss(teacher_features, student_features, features_index, spatia
             reg_loss += reg ( teacher_features[index], student_features[index] ) 
         return reg_loss
 
+def Relations_loss(student_features, labels):
+    student_features = student_features.squeeze(1)
+    
+    labels = labels.argmax(-1)
+    label_grid = labels.unsqueeze(0) == labels.unsqueeze(1)
+    label_grid = label_grid.float()
+
+    reg_loss = (student_features - label_grid) ** 2
+    reg_loss = reg_loss.mean()
+
+    return reg_loss
+
 class Soft_Entropy:
     # https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=9137263
     # https://ieeexplore.ieee.org/document/9098036
@@ -206,7 +218,7 @@ class Soft_Entropy:
 class Base_DistillationLoss(torch.nn.Module):
     def __init__(self, multiple_lrs=None, spatial_avg=None, tau=3,  
         features_index= [-1], lambda1= 1.0, lambda2= 1.0, lambda3= 1.0, mode=None, alpha=1.0, beta=1.0, 
-        gamma=1.0, **kwargs):
+        gamma=1.0, no_teacher=False, **kwargs):
         super().__init__()
         
         self.tau = tau
@@ -220,7 +232,6 @@ class Base_DistillationLoss(torch.nn.Module):
         
 
         self.base_criterion = SoftTargetCrossEntropy()
-
         self.features_index = features_index
         
         if spatial_avg == "mean":
@@ -231,11 +242,12 @@ class Base_DistillationLoss(torch.nn.Module):
         self.multiple_lrs = multiple_lrs
         if self.multiple_lrs:
             if spatial_avg == "mean":
-                self.spatial_avg_lr = lambda x: x.mean(2).unsqueeze(2) if len(x.shape) > 3 else x.unsqueeze(2)
+                self.spatial_avg_lr = lambda x: x.mean(2).unsqueeze(2) if x is not None and len(x.shape) > 3 else x.unsqueeze(2)
             else:
                 self.spatial_avg_lr = lambda x: x
 
         self.mode = mode
+        self.no_teacher = no_teacher
 
     def forward(self, teacher_logits, teacher_features, student_logits, student_features, samples_student, targets):
         '''
@@ -264,9 +276,14 @@ class DistillationLoss(Base_DistillationLoss):
         elif aux_loss == "MLRL":
             self.aux_loss = MLRL(mode=self.mode, lambda1=self.lambda1, lambda2=self.lambda2, lambda3=self.lambda3)
         elif aux_loss == "MK-MMD":
+            assert self.multiple_lrs is None, "`MK-MMD` not implemented for multiple Lr (yet)"
             self.aux_loss = mkmmd
+        elif aux_loss == "relational":
+            assert self.multiple_lrs is None, "This is a fine-tunning loss, no Teacher, so multiple student doesnt make sense"
+            self.aux_loss = Relations_loss
 
         if logit_loss == "soft_entropy":
+            assert self.multiple_lrs is None, "`Soft_entropy` not implemented for multiple Lr (yet)"
             self.logit_loss = Soft_Entropy(lambda1=self.lambda1, lambda2=self.lambda2, tau=self.tau, mode=self.mode)
 
         print(f"""
@@ -284,16 +301,22 @@ class DistillationLoss(Base_DistillationLoss):
         labels == (B, D) [D = # of Classes] either one hot vector or labelled smooth (using cut mix augmentation)
         student_logits_teacher_features == (B, D) [logits generated using Teacher Backbone and Student Classifier Head]
         '''
+
         base_loss = self.base_criterion(student_logits, labels)
         base_loss = self.alpha * base_loss
-
         logit_loss = 0   
         aux_loss = 0
         if self.aux_loss is not None :
-            for index in self.features_index:
-                aux_loss += self.aux_loss(  self.spatial_avg(teacher_features[index]), self.spatial_avg(student_features[index]), labels=labels  )
-                aux_loss = self.beta * aux_loss
-
+            if not self.multiple_lrs:
+                for index in self.features_index:
+                    if self.no_teacher:
+                        aux_loss += self.aux_loss( self.spatial_avg(student_features[index]), labels=labels  )
+                    else:
+                        aux_loss += self.aux_loss(  self.spatial_avg(teacher_features[index]), self.spatial_avg(student_features[index]), labels=labels  )
+                    aux_loss = self.beta * aux_loss
+            else:
+                aux_loss = multiple_lrs_loss(teacher_features, student_features, self.features_index, self.spatial_avg, self.spatial_avg_lr, reg=self.aux_loss)
+                
         if self.logit_loss is not None :
             logit_loss = self.logit_loss(teacher_logits, student_logits, student_logits_teacher_features=student_logits_teacher_features)
             logit_loss = self.gamma * logit_loss
