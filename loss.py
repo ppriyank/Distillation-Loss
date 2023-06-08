@@ -151,6 +151,25 @@ def mkmmd(x, y, factors=[1,2,4,8,16], **misc):
 
     return hint_loss
 
+def cuda_eucledian_dist(x, y):
+    x = F.normalize(x, p=2, dim=-1)
+    y = F.normalize(y, p=2, dim=-1)
+    dist = torch.sum(x ** 2, 1).unsqueeze(1) + torch.sum(y ** 2, 1).unsqueeze(
+        1).transpose(0, 1) - 2 * torch.matmul(x, y.transpose(0, 1))
+    dist = F.relu(dist)
+    return dist
+
+def multiple_lrs_loss(teacher_features, student_features, features_index, spatial_avg, spatial_avg_lr, reg=None):
+        reg_loss = 0 
+        for index in features_index:
+            # print(teacher_features[index].shape, student_features[index].shape)
+            teacher_features[index] = spatial_avg(teacher_features[index]).unsqueeze(1)
+            student_features[index] = spatial_avg_lr(student_features[index])
+            # print(teacher_features[index].shape, student_features[index].shape)
+
+            reg_loss += reg ( teacher_features[index], student_features[index] ) 
+        return reg_loss
+
 class Soft_Entropy:
     # https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=9137263
     # https://ieeexplore.ieee.org/document/9098036
@@ -279,5 +298,9 @@ class DistillationLoss(Base_DistillationLoss):
 
         loss = aux_loss + base_loss + logit_loss
         
+        print(f"CE loss     : {base_loss}")
+        print(f"Aux loss    : {aux_loss}")
+        print(f"Logit loss  : {logit_loss}")
+
         return loss
 
