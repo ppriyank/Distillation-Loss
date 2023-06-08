@@ -128,9 +128,11 @@ def l1_loss(x,y, **misc):
 def mkmmd(x, y, factors=[1,2,4,8,16], **misc):
     # x == teacher
     # y == student
-    x = F.normalize(x, p=2, dim=-1).squeeze()
-    y = F.normalize(y, p=2, dim=-1).squeeze()
-    
+    x = F.normalize(x, p=2, dim=-1)
+    x = rearrange(x, "B N C -> B (N C)")
+    y = F.normalize(y, p=2, dim=-1)
+    y = rearrange(y, "B N C -> B (N C)")
+
     dist_x_x = cuda_eucledian_dist(x,x)
     dist_y_y = cuda_eucledian_dist(y,y)
     dist_x_y = cuda_eucledian_dist(x,y)

@@ -26,22 +26,48 @@ Implementation of Various Distillation Losses (2019-2023)
  - L_FEATURE : Auxillary Loss, `l2` or `l1`, self.beta == lambda3 (in the paper)
     - features_index=[-1] (Features reconstruction only at last layer)
     - Paper propeses `MK-MMD` loss
+    
 ```
 from loss import DistillationLoss
 Diss_Loss = DistillationLoss(
     logit_loss="soft_entropy", 
     lambda1=1.0, lambda2=0, tau=2, mode="student_softening",
     aux_loss="l1", features_index=[-1],  
-    alpha=1.0 , beta =1.0, gamma =1.0, 
+    alpha=1.0 , beta =1.0, gamma =1.0, spatial_avg="mean",
 )
 
 Diss_Loss = DistillationLoss(
     logit_loss="soft_entropy", 
     lambda1=1.0, lambda2=0, tau=2, mode="student_softening",
     aux_loss="MK-MMD", features_index=[-1],  
-    alpha=1.0 , beta =1.0, gamma =1.0, 
+    alpha=1.0 , beta =1.0, gamma =1.0, spatial_avg="mean",
 )
 ```
+
+#### [Low-Resolution Face Recognition in the Wild with Mixed-Domain Distillation, 2019](https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8919361)
+   
+```
+from loss import DistillationLoss
+Diss_Loss = DistillationLoss(
+    aux_loss="l1", features_index=[-1], 
+    alpha=1.0, beta =1.0, spatial_avg="mean",
+)
+```
+
+#### [Fewer-Shots and Lower-Resolutions: Towards Ultrafast Face Recognition in the Wild, 2019](https://dl.acm.org/doi/pdf/10.1145/3343031.3351082?casa_token=wdms_EHiPZEAAAAA:KQtFlBNkOZIq4Ubri935TxatOEOBWPGASmIO1LdoKqpY619lCuia4DUBqAx5k1YMxw_lwk7LNEM6
+)
+
+```
+from loss import DistillationLoss
+Diss_Loss = DistillationLoss(
+    aux_loss="l2", features_index=[-1], 
+    alpha=1.0, beta =1.0, spatial_avg="mean",
+
+)
+```
+
+
+
 
 
 ## Testing the above loss 
@@ -51,11 +77,22 @@ Diss_Loss = DistillationLoss(
 
 import torch
 teacher_logits = torch.rand(2, 200)
-teacher_features = [torch.rand(2, 49, 2048), torch.rand(2, 196, 1024)] 
-student_logits = torch.rand(2, 200)
-student_features = [torch.rand(2, 49, 2048), torch.rand(2, 196, 1024)] 
+teacher_features = [torch.rand(2, 196, 1024), torch.rand(2, 49, 2048)] 
 labels = torch.rand(2, 200).softmax(-1)
 student_logits_teacher_features = torch.rand(2, 200)
+
+<!-- 1 TEACHER 1 STUDENT -->
+student_logits = torch.rand(2, 200)
+student_features = [torch.rand(2, 196, 1024), torch.rand(2, 49, 2048)] 
+
+Diss_Loss(
+    teacher_logits=teacher_logits, teacher_features=teacher_features, student_logits=student_logits, student_features=student_features, labels=labels, student_logits_teacher_features=student_logits_teacher_features,
+)
+
+
+<!-- 1 TEACHER N=10 STUDENTS -->
+student_logits = torch.rand(2, 10, 200)
+student_features = [torch.rand(2, 10, 196, 1024), torch.rand(2, 10, 49, 2048)] 
 
 Diss_Loss(
     teacher_logits=teacher_logits, teacher_features=teacher_features, student_logits=student_logits, student_features=student_features, labels=labels, student_logits_teacher_features=student_logits_teacher_features,
