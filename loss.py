@@ -151,6 +151,36 @@ def mkmmd(x, y, factors=[1,2,4,8,16], **misc):
 
     return hint_loss
 
+class Soft_Entropy:
+    # https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=9137263
+    # https://ieeexplore.ieee.org/document/9098036
+    def __init__(self, lambda1=0, lambda2=0, tau=0, mode="None"):
+        self.base_criterion = SoftTargetCrossEntropy()
+        self.lambda1 = lambda1
+        self.lambda2 = lambda2
+        self.tau = tau
+        self.mode = mode
+
+    def __call__(self, teacher_logits, student_logits, student_logits_teacher_features, **misc):
+        entropy1, entropy2 = 0, 0 
+        teacher_logits = teacher_logits / self.tau
+        if self.mode == "student_softening":
+            student_logits = student_logits / self.tau
+            
+        if self.lambda1:
+            # q_pre = (teacher_logits).softmax(-1)
+            # p_k = student_logits.softmax(-1)
+            # entropy1 = -(q_pre *  p_k.log()).sum(-1).mean()
+            entropy1 = self.base_criterion(student_logits, teacher_logits.softmax(-1))
+            entropy1 = entropy1 * self.lambda1
+            
+        if self.lambda2:
+            # p_k_pre = student_logits_teacher_features.softmax(-1)        
+            # entropy2 = -(q_pre *  p_k_pre.log()).sum(-1).mean()
+            entropy2 = self.base_criterion(student_logits_teacher_features, teacher_logits.softmax(-1))
+            entropy2 = entropy2 * self.lambda2
+
+        return entropy1 + entropy2 
 
 class Base_DistillationLoss(torch.nn.Module):
     def __init__(self, multiple_lrs=None, spatial_avg=None, tau=3,  
@@ -216,17 +246,20 @@ class DistillationLoss(Base_DistillationLoss):
             self.aux_loss = mkmmd
 
         if logit_loss == "soft_entropy":
-            self.logit_loss = Soft_Entropy(lambda1=self.lambda1, lambda2=self.lambda2, tau=self.tau)
+            self.logit_loss = Soft_Entropy(lambda1=self.lambda1, lambda2=self.lambda2, tau=self.tau, mode=self.mode)
 
-        print(f"""Entropy Loss weight {self.alpha}, 
-            Aux loss weight {self.beta}, Logit loss {self.gamma}""")
+        print(f"""
+        Entropy Loss weight {self.alpha}, 
+        Aux loss weight {self.beta}, 
+        Logit loss {self.gamma}
+        """)
 
     def forward(self, teacher_logits, teacher_features, student_logits, student_features, labels, student_logits_teacher_features=None, **kwargs):
         '''
         teacher_logits == (B, D) [D = # of Classes]
         student_logits == (B, D) [D = # of Classes]
-        teacher_features == (B, N, C) [N = (hw) tokens]
-        student_features == (B, N, C) [N = (hw) tokens]
+        teacher_features == list of (B, N, C) [N = (hw) tokens]
+        student_features == list of (B, N, C) [N = (hw) tokens] features
         labels == (B, D) [D = # of Classes] either one hot vector or labelled smooth (using cut mix augmentation)
         student_logits_teacher_features == (B, D) [logits generated using Teacher Backbone and Student Classifier Head]
         '''
